@@ -49,7 +49,7 @@ export module ios {
         }
     }
 
-    export function setTextDecoration(view: dts.ios.TextUIView, value: string) {
+    export function setTextDecoration(view: dts.ios.TextUIView | UIButton, value: string) {
         var attributes: NSMutableDictionary = NSMutableDictionary.alloc().init();
         var values = (value + "").split(" ");
 
@@ -61,14 +61,25 @@ export module ios {
             attributes.setObjectForKey(NSUnderlineStyle.NSUnderlineStyleSingle, NSStrikethroughStyleAttributeName);
         }
 
-        if (values.indexOf(enums.TextDecoration.none) === -1) {
-            setTextDecorationNative(view, view.text || view.attributedText, attributes);
-        } else {
-            setTextDecorationNative(view, view.text || view.attributedText, NSMutableDictionary.alloc().init());
+        if (values.indexOf(enums.TextDecoration.none) !== -1) {
+            attributes = NSMutableDictionary.alloc().init();
         }
+
+        let newAttributedText: NSMutableAttributedString;
+        let attributedText = getNSAttributedStringFromView(view);
+
+        if (attributedText) {
+            newAttributedText = getNewAttributedString(attributedText, { attributesToAdd: attributes });
+        } else {
+            var types: typeof typesModule = require("utils/types");
+            var newStr = types.isString((<dts.ios.TextUIView>view).text) ? (<dts.ios.TextUIView>view).text : "";
+            newAttributedText = NSMutableAttributedString.alloc().initWithStringAttributes(newStr, attributes);
+        }
+
+        setAttributedStringToView(view, newAttributedText);
     }
 
-    export function setTextTransform(view: dts.ios.TextUIView, value: string) {
+    export function setTextTransform(view: dts.ios.TextUIView | UIButton, value: string) {
         let str = getNSStringFromView(view);
         let result: string;
 
@@ -92,10 +103,10 @@ export module ios {
             view["originalString"] = str;
         }
 
-        let newStr = getAttributedStringFromView(view, result);
+        let attributedText = getNSAttributedStringFromView(view);
 
-        if (newStr) {
-            setAttributedStringToView(view, newStr);
+        if (attributedText) {
+            setAttributedStringToView(view, getNewAttributedString(getNSAttributedStringFromView(view), { newValue: result }));
         } else {
             setStringToView(view, result);
         }
@@ -125,23 +136,8 @@ export module ios {
         }
     }
 
-    function getAttributedStringFromView(view: any, value: string): NSMutableAttributedString {
-        let result: NSMutableAttributedString;
-
-        if (view instanceof UIButton) {
-            let attrTitle = (<UIButton>view).titleLabel.attributedText;
-            if (attrTitle) {
-                result = NSMutableAttributedString.alloc().initWithAttributedString(attrTitle);
-            }
-        } else if (view.attributedText) {
-            result = NSMutableAttributedString.alloc().initWithAttributedString(view.attributedText);
-        }
-
-        if (result) {
-            result.replaceCharactersInRangeWithString({ location: 0, length: result.length }, value);
-        }
-
-        return result;
+    function getNSAttributedStringFromView(view: any): NSAttributedString {
+        return view instanceof UIButton && (<UIButton>view).titleLabel.attributedText || (<dts.ios.TextUIView>view).attributedText;
     }
 
     function setAttributedStringToView(view: any, str: NSMutableAttributedString) {
@@ -151,6 +147,36 @@ export module ios {
         else {
             (<dts.ios.TextUIView>view).attributedText = str;
         }
+    }
+
+    interface NewAttributedStringOptions {
+        newValue?: string;
+        attributesToAdd?: NSMutableDictionary;
+    }
+
+    function getNewAttributedString(source: NSAttributedString, options: NewAttributedStringOptions): NSMutableAttributedString {
+        let result = source.mutableCopy();
+        let attributes = NSMutableArray.array();
+        let range = { location: 0, length: result.length };
+
+        result.enumerateAttributesInRangeOptionsUsingBlock(range, 0, (attrs, r, stop) => {
+            attributes.addObject({ attrs: attrs, range: NSValue.valueWithRange(r) });
+        });
+
+        if (options.newValue) {
+            result.replaceCharactersInRangeWithString(range, options.newValue);
+        }
+
+        if (options.attributesToAdd) {
+            attributes.addObject({ attrs: options.attributesToAdd, range: NSValue.valueWithRange(range) });
+        }
+
+        for (let i = 0; i < attributes.count; i++) {
+            let attribute = attributes[i];
+            result.setAttributesRange(attribute["attrs"], attribute["range"].rangeValue);
+        }
+
+        return result;
     }
 
     export function setWhiteSpace(view: dts.ios.TextUIView, value: string, parentView?: UIView) {
@@ -165,19 +191,6 @@ export module ios {
                 view.lineBreakMode = NSLineBreakMode.NSLineBreakByTruncatingTail;
             }
             view.numberOfLines = 1;
-        }
-    }
-
-    function setTextDecorationNative(view: dts.ios.TextUIView, value: string | NSAttributedString, attributes: NSMutableDictionary) {
-        var attributedString: NSMutableAttributedString;
-
-        if (value instanceof NSAttributedString) {
-            attributedString = NSMutableAttributedString.alloc().initWithAttributedString(value);
-            attributedString.addAttributesRange(attributes, NSRangeFromString(attributedString.string));
-        } else {
-            var types: typeof typesModule = require("utils/types");
-
-            view.attributedText = NSAttributedString.alloc().initWithStringAttributes(types.isString(value) ? <string>value : "", attributes);
         }
     }
 
